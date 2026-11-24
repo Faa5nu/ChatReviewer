@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor de chats de WhatsApp</title>
+<style>
+:root{
+  --header:#008069; --header-text:#fff;
+  --bg:#efeae2; --in:#e9edef; --out:#d9fdd3;
+  --text:#111b21; --muted:#667781; --sys:#ffeecd; --day:#fff;
+  --shadow:0 1px .5px rgba(11,20,26,.13);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --header:#202c33; --bg:#0b141a; --in:#202c33; --out:#005c4b;
+    --text:#e9edef; --muted:#8696a0; --sys:#182229; --day:#182229;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Segoe UI",Helvetica,Arial,sans-serif;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+
+/* Cabecera */
+.top{background:var(--header);color:var(--header-text);padding:10px 16px;display:flex;align-items:center;gap:12px;flex:none;
+  padding-top:calc(10px + env(safe-area-inset-top,0px))}
+.avatar{width:40px;height:40px;border-radius:50%;background:#dfe5e7;color:#54656f;display:grid;place-items:center;font-weight:600;flex:none}
+.title{flex:1;min-width:0}
+.title b{display:block;font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title small{font-size:13px;opacity:.8}
+.top select,.top label.btn,.top button.btn{font:inherit;font-size:13px;color:inherit;background:rgba(255,255,255,.15);border:0;border-radius:8px;padding:7px 10px;cursor:pointer}
+.top select option{color:#111}
+.top select{max-width:150px}
+input[type=file]{display:none}
+.top button.btn{display:grid;place-items:center;width:34px;height:34px;padding:0}
+.top button.btn:disabled{opacity:.4;cursor:default}
+.search{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--in);color:var(--text);flex:none;box-shadow:0 1px 3px rgba(0,0,0,.15);z-index:1}
+.search[hidden]{display:none}
+.search input{flex:1;min-width:0;font:inherit;font-size:14.5px;color:inherit;background:var(--bg);border:0;border-radius:8px;padding:9px 12px}
+.search input:focus-visible{outline:2px solid var(--header)}
+.search span{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.search button{background:none;border:0;color:var(--muted);font-size:15px;width:30px;height:30px;border-radius:50%;cursor:pointer}
+.search button:hover{background:rgba(127,127,127,.18)}
+.search button:focus-visible{outline:2px solid var(--header)}
+mark{background:#ffd54f;color:#111;border-radius:2px;padding:0 1px}
+mark.cur{background:#ff9800}
+.top :focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Chat */
+#chat{flex:1;overflow-y:auto;padding:12px 14px 20px;display:flex;flex-direction:column;gap:2px}
+@media (max-width:640px){#chat{padding:10px 6px 16px}}
+.day,.sys{align-self:center;text-align:center;font-size:12.5px;border-radius:8px;padding:5px 12px;box-shadow:var(--shadow);margin:10px 0 6px;max-width:85%}
+.day{background:var(--day);color:var(--muted)}
+.sys{background:var(--sys);color:var(--muted);margin:6px 0}
+
+.msg{max-width:min(65%,560px);padding:6px 7px 6px 9px;border-radius:8px;box-shadow:var(--shadow);position:relative;
+  font-size:14.2px;line-height:19px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:2px}
+@media (max-width:640px){.msg{max-width:85%}}
+.msg.in{align-self:flex-start;background:var(--in);border-top-left-radius:0}
+.msg.out{align-self:flex-end;background:var(--out);border-top-right-radius:0}
+.msg.first{margin-top:8px}
+.msg.first.in::before,.msg.first.out::before{content:"";position:absolute;top:0;border:6px solid transparent}
+.msg.first.in::before{left:-6px;border-top-color:var(--in);border-right-color:var(--in)}
+.msg.first.out::before{right:-6px;border-top-color:var(--out);border-left-color:var(--out)}
+.who{display:block;font-size:12.8px;font-weight:600;margin-bottom:1px}
+.time{float:right;font-size:11px;color:var(--muted);margin:6px 0 -4px 12px;white-space:nowrap}
+.media{font-style:italic;color:var(--muted)}
+.msg a{color:#027eb5}
+@media (prefers-color-scheme:dark){.msg a{color:#53bdeb}}
+
+/* Estado vacío */
+.empty{margin:auto;text-align:center;max-width:380px;padding:24px;color:var(--muted)}
+.empty h1{font-size:20px;font-weight:500;color:var(--text);margin:0 0 8px}
+.empty p{margin:0 0 18px;line-height:1.5}
+.empty label.btn{display:inline-block;background:var(--header);color:#fff;padding:11px 20px;border-radius:24px;cursor:pointer;font-weight:500}
+.empty.drag{outline:2px dashed var(--header);outline-offset:8px;border-radius:12px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="avatar" id="avatar">💬</div>
+  <div class="title"><b id="chatName">Visor de WhatsApp</b><small id="chatInfo">Sin chat cargado</small></div>
+  <select id="meSelect" aria-label="¿Quién eres tú?" hidden></select>
+  <button class="btn" id="searchBtn" aria-label="Buscar mensajes" title="Buscar" disabled>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+  </button>
+  <label class="btn" tabindex="0">Abrir .txt<input type="file" id="file" accept=".txt,text/plain"></label>
+</header>
+
+<div class="search" id="searchBar" hidden>
+  <input type="search" id="q" placeholder="Buscar mensajes" aria-label="Buscar mensajes" autocomplete="off">
+  <span id="count" aria-live="polite"></span>
+  <button id="prev" aria-label="Resultado anterior" title="Anterior (Mayús+Intro)">▲</button>
+  <button id="next" aria-label="Resultado siguiente" title="Siguiente (Intro)">▼</button>
+  <button id="closeSearch" aria-label="Cerrar búsqueda" title="Cerrar (Esc)">✕</button>
+</div>
+
+<main id="chat">
+  <div class="empty" id="empty">
+    <h1>Abre un chat exportado</h1>
+    <p>Arrastra aquí el archivo .txt que te da WhatsApp o elígelo desde tu dispositivo. Todo se procesa en tu navegador; nada se sube a ningún servidor.</p>
+    <label class="btn">Elegir archivo<input type="file" id="file2" accept=".txt,text/plain"></label>
+  </div>
+</main>
+
+<script>
+(function(){
+  const chat = document.getElementById('chat');
+  const meSelect = document.getElementById('meSelect');
+  let messages = [], me = null, query = '', marks = [], cur = -1;
+
+  // ---------- Lectura de archivos ----------
+  function load(file){
+    if(!file) return;
+    const r = new FileReader();
+    r.onload = () => start(String(r.result), file.name);
+    r.readAsText(file, 'utf-8');
+  }
+  document.getElementById('file').onchange = e => load(e.target.files[0]);
+  document.getElementById('file2').onchange = e => load(e.target.files[0]);
+  ['dragover','drop'].forEach(ev => window.addEventListener(ev, e => {
+    e.preventDefault();
+    if(ev === 'drop') load(e.dataTransfer.files[0]);
+  }));
+
+  // ---------- Parseo ----------
+  // Android: "12/03/2024, 14:35 - Ana: Hola"   iOS: "[12/03/24, 14:35:10] Ana: Hola"
+  const D = '(\\d{1,2}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{2,4})';
+  const T = '(\\d{1,2}[:.]\\d{2}(?:[:.]\\d{2})?(?:\\s?[ap]\\.?\\s?m\\.?)?)';
+  const RE_A = new RegExp('^' + D + ',?\\s+' + T + '\\s+-\\s+([\\s\\S]*)$', 'i');
+  const RE_I = new RegExp('^\\[' + D + ',?\\s+' + T + '\\]\\s+([\\s\\S]*)$', 'i');
+  const MEDIA = /<(multimedia omitido|media omitted|archivo omitido|imagen omitida|sticker omitido|audio omitido|video omitido)>|(imagen|sticker|audio|vídeo|video|GIF|documento) omitido|\(archivo adjunto\)|\.(jpg|jpeg|png|webp|opus|mp4|pdf|vcf)\s*\(archivo adjunto\)/i;
+
+  function parse(text){
+    const out = [];
+    const lines = text.replace(/[\u200e\u200f\u202a-\u202f]/g, m => m === '\u202f' ? ' ' : '').split(/\r?\n/);
+    for(const line of lines){
+      const m = line.match(RE_A) || line.match(RE_I);
+      if(m){
+        const rest = m[3];
+        // Remitente = texto hasta el primer ":" seguido de espacio. Puede estar vacío (": hola"),
+        // en ese caso se usa "Contacto" para que el mensaje no se confunda con un aviso del sistema.
+        const k = rest.match(/^([^\n]{0,60}?):(?:\s|$)/);
+        out.push({ date:m[1], time:m[2], sender:null,
+                   cand: k ? (k[1].trim() || 'Contacto') : null,
+                   text: k ? rest.slice(k[0].length) : rest });
+      } else if(out.length){
+        out[out.length-1].text += '\n' + line;   // mensaje de varias líneas
+      }
+    }
+    // Un prefijo cuenta como remitente si aparece 2+ veces o parece un nombre (máx. 3 palabras).
+    // Así "Ana cambió el asunto a: X" se trata como aviso del sistema y no como mensaje de "Ana cambió el asunto a".
+    const count = {};
+    out.forEach(m => { if(m.cand !== null) count[m.cand] = (count[m.cand]||0) + 1; });
+    out.forEach(m => {
+      if(m.cand !== null && (count[m.cand] > 1 || m.cand.trim().split(/\s+/).length <= 3)){
+        m.sender = m.cand;
+      } else if(m.cand !== null){
+        m.text = m.cand + ': ' + m.text;   // era un aviso: recupera el texto completo
+      }
+      m.text = m.text.replace(/^:\s+/, '');  // nunca empezar un mensaje con ":"
+      delete m.cand;
+    });
+    return out;
+  }
+
+  // ---------- Render ----------
+  function esc(x){ return x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  // Añade texto a "el" resaltando las coincidencias de la búsqueda
+  function addText(el, text){
+    if(!query){ el.append(text); return; }
+    const re = new RegExp(esc(query), 'gi');
+    let last = 0, m;
+    while((m = re.exec(text))){
+      if(!m[0]) break;
+      el.append(text.slice(last, m.index));
+      const k = document.createElement('mark');
+      k.textContent = m[0]; el.append(k);
+      last = m.index + m[0].length;
+    }
+    el.append(text.slice(last));
+  }
+  function linkify(el, text){
+    const re = /(https?:\/\/[^\s<]+)/g;
+    let last = 0, m;
+    while((m = re.exec(text))){
+      addText(el, text.slice(last, m.index));
+      const a = document.createElement('a');
+      a.href = m[1]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      addText(a, m[1]);
+      el.append(a);
+      last = m.index + m[1].length;
+    }
+    addText(el, text.slice(last));
+  }
+
+  function colorFor(name){
+    let h = 0; for(const c of name) h = (h*31 + c.charCodeAt(0)) % 360;
+    return `hsl(${h} 55% 42%)`;
+  }
+
+  function render(keepScroll){
+    const st = chat.scrollTop;
+    chat.textContent = '';
+    const frag = document.createDocumentFragment();
+    const senders = [...new Set(messages.filter(m => m.sender).map(m => m.sender))];
+    const isGroup = senders.length > 2;
+    let lastDate = null, lastSender = null;
+
+    for(const m of messages){
+      if(m.date !== lastDate){
+        const d = document.createElement('div');
+        d.className = 'day'; d.textContent = m.date;
+        frag.append(d); lastDate = m.date; lastSender = null;
+      }
+      if(!m.sender){
+        const s = document.createElement('div');
+        s.className = 'sys'; s.textContent = m.text.trim();
+        frag.append(s); lastSender = null; continue;
+      }
+      const out = m.sender === me;
+      const el = document.createElement('div');
+      el.className = 'msg ' + (out ? 'out' : 'in') + (m.sender !== lastSender ? ' first' : '');
+      if(isGroup && !out && m.sender !== lastSender){
+        const w = document.createElement('span');
+        w.className = 'who'; w.textContent = m.sender; w.style.color = colorFor(m.sender);
+        el.append(w);
+      }
+      if(MEDIA.test(m.text.trim())){
+        const s = document.createElement('span');
+        s.className = 'media'; addText(s, '📎 ' + m.text.trim().replace(/[<>]/g,''));
+        el.append(s);
+      } else {
+        linkify(el, m.text);
+      }
+      const t = document.createElement('span');
+      t.className = 'time'; t.textContent = m.time.replace(/^(\d{1,2}[:.]\d{2})[:.]\d{2}/, '$1');
+      el.append(t);
+      frag.append(el);
+      lastSender = m.sender;
+    }
+    chat.append(frag);
+    chat.scrollTop = keepScroll ? st : 0;
+    marks = [...chat.querySelectorAll('mark')];
+    cur = -1;
+  }
+
+  function start(text, filename){
+    messages = parse(text);
+    if(!messages.length){
+      chat.innerHTML = '<div class="empty"><h1>No se pudo leer el chat</h1><p>El archivo no parece una exportación de WhatsApp. Exporta el chat de nuevo desde la app y prueba otra vez.</p></div>';
+      return;
+    }
+    const senders = [...new Set(messages.filter(m => m.sender).map(m => m.sender))];
+    me = senders.length > 1 ? (senders.includes('Contacto') ? senders.find(x => x !== 'Contacto') : senders[1]) : senders[0] || null;
+    meSelect.textContent = '';
+    senders.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s; o.textContent = 'Yo: ' + s; o.selected = s === me;
+      meSelect.append(o);
+    });
+    meSelect.hidden = senders.length < 2;
+
+    const name = filename.replace(/^Chat de WhatsApp con\s*/i,'').replace(/^WhatsApp Chat - /i,'').replace(/\.txt$/i,'');
+    document.getElementById('chatName').textContent = name;
+    document.getElementById('avatar').textContent = name.trim().charAt(0).toUpperCase() || '💬';
+    document.getElementById('chatInfo').textContent =
+      messages.length.toLocaleString('es') + ' mensajes · ' + senders.length + (senders.length === 1 ? ' participante' : ' participantes');
+    document.getElementById('searchBtn').disabled = false;
+    closeSearch();
+    render();
+  }
+
+  meSelect.onchange = () => { me = meSelect.value; render(true); };
+
+  // ---------- Búsqueda ----------
+  const bar = document.getElementById('searchBar'), q = document.getElementById('q'), count = document.getElementById('count');
+  function updateCount(){
+    count.textContent = !query ? '' : marks.length ? (cur + 1) + ' de ' + marks.length : 'Sin resultados';
+  }
+  function go(i){
+    if(!marks.length){ updateCount(); return; }
+    if(marks[cur]) marks[cur].classList.remove('cur');
+    cur = (i + marks.length) % marks.length;
+    marks[cur].classList.add('cur');
+    marks[cur].scrollIntoView({ block:'center' });
+    updateCount();
+  }
+  let timer;
+  q.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      query = q.value.trim();
+      render(true);
+      if(marks.length) go(0); else updateCount();
+    }, 250);
+  };
+  q.onkeydown = e => {
+    if(e.key === 'Enter'){ e.preventDefault(); clearTimeout(timer); if(query !== q.value.trim()){ q.oninput(); return; } go(cur + (e.shiftKey ? -1 : 1)); }
+    if(e.key === 'Escape') closeSearch();
+  };
+  document.getElementById('next').onclick = () => go(cur + 1);
+  document.getElementById('prev').onclick = () => go(cur - 1);
+  function closeSearch(){
+    bar.hidden = true; q.value = '';
+    if(query){ query = ''; render(true); }
+    count.textContent = '';
+  }
+  document.getElementById('closeSearch').onclick = closeSearch;
+  document.getElementById('searchBtn').onclick = () => {
+    if(bar.hidden){ bar.hidden = false; q.focus(); } else closeSearch();
+  };
+  window.addEventListener('keydown', e => {
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && messages.length){
+      e.preventDefault(); bar.hidden = false; q.focus(); q.select();
+    }
+  });
+})();
+</script>
+</body>
+</html>
